@@ -1,5 +1,9 @@
 package bitcoinaverage
 
+import (
+	"encoding/json"
+)
+
 // Ticker is the full data for a single ticker
 type Ticker struct {
 	Ask              float64  `json:"ask"`
@@ -20,9 +24,51 @@ type Ticker struct {
 
 // DWM holds data for a set of float values dor "day", "week", and "month"
 type DWM struct {
-	Day   float64 `json:"day"`
-	Week  float64 `json:"week"`
-	Month float64 `json:"month"`
+	RawDay   json.Number `json:"day"`
+	RawWeek  json.Number `json:"week"`
+	RawMonth json.Number `json:"month"`
+}
+
+// Day returns the float64 value for the potential number passed in, 0 if it was not a number
+func (d *DWM) Day() float64 {
+	f, err := d.RawDay.Float64()
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// GetDay returns the float64 value for the potential number passed in, error if it was not a number
+func (d *DWM) GetDay() (float64, error) {
+	return d.RawDay.Float64()
+}
+
+// Week returns the float64 value for the potential number passed in, 0 if it was not a number
+func (d *DWM) Week() float64 {
+	f, err := d.RawWeek.Float64()
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// GetWeek returns the float64 value for the potential number passed in, error if it was not a number
+func (d *DWM) GetWeek() (float64, error) {
+	return d.RawWeek.Float64()
+}
+
+// Month returns the float64 value for the potential number passed in, 0 if it was not a number
+func (d *DWM) Month() float64 {
+	f, err := d.RawMonth.Float64()
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// GetMonth returns the float64 value for the potential number passed in, error if it was not a number
+func (d *DWM) GetMonth() (float64, error) {
+	return d.RawMonth.Float64()
 }
 
 // Changes holds the percent and price changes ising DWM stucts
