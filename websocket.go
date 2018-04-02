@@ -13,6 +13,12 @@ type WebsocketTicker struct {
 	Data  *Ticker `json:"data"`
 }
 
+// WebsocketExchange holds the exchange data wrapped in the websocket JSON
+type WebsocketExchange struct {
+	Event string    `json:"event"`
+	Data  *Exchange `json:"data"`
+}
+
 // WebsocketTicket is the auth token used to connect the socket
 type WebsocketTicket struct {
 	Ticket string `json:"ticket"`
@@ -32,6 +38,7 @@ type WebsocketOperation struct {
 
 // WebsocketOperationOptions are options for an operation
 type WebsocketOperationOptions struct {
-	Currency  string `json:"currency"`
-	SymbolSet string `json:"symbol_set"`
+	Currency  string `json:"currency,omitempty"`
+	SymbolSet string `json:"symbol_set,omitempty"`
+	Exchange  string `json:"exchange,omitempty"`
 }

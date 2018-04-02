@@ -128,23 +128,101 @@ func monitorTickerStream(conn *websocket.Conn, dataChan chan *Ticker, errChan ch
 	}
 }
 
-// TickerStream will send *Ticker data on the supplied dataChan
-func (c *Client) TickerStream(ticker string) (chan *Ticker, chan error, chan bool, error) {
-	dataChan := make(chan *Ticker, 2)
+func monitorExchangeStream(conn *websocket.Conn, dataChan chan *Exchange, errChan chan error, stopChan chan bool) {
+	// log.Println("monitoring websocket")
+	defer conn.Close()
+	for {
+		select {
+		case <-stopChan:
+			close(dataChan)
+			close(errChan)
+			return
+		default:
+			// log.Println("reading from websocket")
+			resp := &WebsocketExchange{}
+			err := conn.ReadJSON(resp)
+			if err != nil {
+				// log.Println("got error from read", err)
+				errChan <- err
+			} else {
+				// log.Printf("got ticker data from read: %#v", resp.Data)
+				dataChan <- resp.Data
+			}
+		}
+	}
+}
+
+// ExchangeStream will stream one or more exchanges
+func (c *Client) ExchangeStream(exchanges ...string) (chan *Exchange, chan error, chan bool, error) {
+	dataChan := make(chan *Exchange, 2)
 	errChan := make(chan error)
 	stopChan := make(chan bool)
-	ticket, err := c.getWebsocketTicket()
+
+	conn, err := c.getSocketConnection("websocket/multiple/exchanges")
 	if err != nil {
 		return nil, nil, nil, err
+	}
+
+	for _, e := range exchanges {
+		// log.Printf("got socket connection %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+		err = conn.WriteJSON(&WebsocketCommand{
+			Event: "message",
+			Data: &WebsocketOperation{
+				Operation: "subscribe",
+				Options: &WebsocketOperationOptions{
+					Exchange: e,
+				},
+			},
+		})
+	}
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	resp := &WebsocketCommandResponse{}
+	err = conn.ReadJSON(resp)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if resp.Data != "OK" {
+		return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
+	}
+
+	go monitorExchangeStream(conn, dataChan, errChan, stopChan)
+
+	return dataChan, errChan, stopChan, nil
+}
+
+func (c *Client) getSocketConnection(urlStr string) (*websocket.Conn, error) {
+
+	ticket, err := c.getWebsocketTicket()
+	if err != nil {
+		return nil, err
 	}
 	// log.Println("got socket ticket")
 
 	params := url.Values{}
 	params.Add("ticket", ticket.Ticket)
 	params.Add("public_key", c.publicKey)
-	socketURL := makeReqURL("wss", "websocket/ticker", params)
+	socketURL := makeReqURL("wss", urlStr, params)
 	// log.Println("connecting to socket", socketURL)
 	conn, _, err := websocket.DefaultDialer.Dial(socketURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+
+}
+
+// TickerStream will send *Ticker data on the supplied dataChan
+func (c *Client) TickerStream(ticker string) (chan *Ticker, chan error, chan bool, error) {
+	dataChan := make(chan *Ticker, 2)
+	errChan := make(chan error)
+	stopChan := make(chan bool)
+
+	conn, err := c.getSocketConnection("websocket/ticker")
 	if err != nil {
 		return nil, nil, nil, err
 	}
