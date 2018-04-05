@@ -158,7 +158,7 @@ func (c *Client) ExchangeStream(exchanges ...string) (chan *Exchange, chan error
 	errChan := make(chan error)
 	stopChan := make(chan bool)
 
-	conn, err := c.getSocketConnection("websocket/multiple/exchanges")
+	conn, err := c.getSocketConnection("websocket/exchanges")
 	if err != nil {
 		return nil, nil, nil, err
 	}
