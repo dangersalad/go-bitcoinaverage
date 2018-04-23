@@ -8,6 +8,10 @@ const (
 	BTCUSD = Pair("BTCUSD")
 	// BTCCNY is the price of 1 BTC in CNY
 	BTCCNY = Pair("BTCCNY")
+	// BTCAUD is the price of 1 BTC in AUD
+	BTCAUD = Pair("BTCAUD")
+	// BTCGBP is the price of 1 BTC in GBP
+	BTCGBP = Pair("BTCGBP")
 )
 
 // GetBase gets the first currency in the pair

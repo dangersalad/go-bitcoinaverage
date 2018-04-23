@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -214,6 +215,29 @@ func (c *Client) getSocketConnection(urlStr string) (*websocket.Conn, error) {
 	}
 	return conn, nil
 
+}
+
+// Tickers returns the global ticker data for the supplied cryptos and fiats
+func (c *Client) Tickers(cryptos, fiats []string) (MultiTicker, error) {
+	params := url.Values{}
+
+	if cryptos != nil && len(cryptos) > 0 {
+		params.Set("crypto", strings.Join(cryptos, ","))
+	}
+	if fiats != nil && len(fiats) > 0 {
+		params.Set("fiat", strings.Join(fiats, ","))
+	}
+
+	res, err := c.doReq("/indices/global/ticker/all", params)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(res.Body)
+	data := MultiTicker{}
+	if err := dec.Decode(&data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // TickerStream will send *Ticker data on the supplied dataChan

@@ -4,6 +4,12 @@ import (
 	"encoding/json"
 )
 
+// MultiTicker is Ticker data for multiple symbols
+type MultiTicker map[Pair]*Ticker
+
+// MultiSet is Ticker data for multiple symbols in multiple symbol sets
+type MultiSet map[string]*MultiTicker
+
 // Ticker is the full data for a single ticker
 type Ticker struct {
 	Ask              float64  `json:"ask"`
