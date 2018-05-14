@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,7 +17,6 @@ import (
 	"time"
 )
 
-var _ = log.Print
 var _ = bytes.MinRead
 
 const (
@@ -28,14 +27,16 @@ const (
 type Client struct {
 	publicKey, privateKey string
 	http                  http.Client
+	logger                logger
 }
 
 // NewClient returns a new Client instance with the keys set
-func NewClient(publicKey, privateKey string) *Client {
+func NewClient(publicKey, privateKey string, l logger) *Client {
 	return &Client{
 		publicKey:  publicKey,
 		privateKey: privateKey,
 		http:       http.Client{},
+		logger:     l,
 	}
 }
 
@@ -71,42 +72,45 @@ func (c *Client) doReq(path string, params url.Values) (*http.Response, error) {
 	reqURL := makeReqURL("https", path, params)
 	r, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "making request for %s", path)
 	}
 	r.Header.Set("X-signature", c.getSignature())
 	res, err := c.http.Do(r)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "doing request for %s", path)
 	}
 	if res.StatusCode >= 400 {
 		bodyBytes, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "reading response for %s", path)
 		}
-		return nil, fmt.Errorf("[%d] %s from bitcoinaverage API: %s", res.StatusCode, res.Status, bodyBytes)
+		return nil, errors.Errorf("[%d] %s from bitcoinaverage API: %s", res.StatusCode, res.Status, bodyBytes)
 	}
 	return res, nil
 }
 
 func (c *Client) getWebsocketTicket() (*WebsocketTicket, error) {
 	res, err := c.doReq("websocket/get_ticket", nil)
+	if err != nil {
+		return nil, err
+	}
 	// bodyBytes, err := ioutil.ReadAll(res.Body)
 	// if err != nil {
 	// 	return nil, err
 	// }
-	// log.Println(string(bodyBytes))
+	// c.debug(string(bodyBytes))
 	// res.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 	dec := json.NewDecoder(res.Body)
 	ticket := &WebsocketTicket{}
 	err = dec.Decode(ticket)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "decoding JSON")
 	}
 	return ticket, nil
 }
 
-func monitorTickerStream(conn *websocket.Conn, dataChan chan *Ticker, errChan chan error, stopChan chan bool) {
-	// log.Println("monitoring websocket")
+func (c *Client) monitorTickerStream(conn *websocket.Conn, dataChan chan *Ticker, errChan chan error, stopChan chan bool) {
+	c.debug("monitoring websocket")
 	defer conn.Close()
 	for {
 		select {
@@ -115,22 +119,21 @@ func monitorTickerStream(conn *websocket.Conn, dataChan chan *Ticker, errChan ch
 			close(errChan)
 			return
 		default:
-			// log.Println("reading from websocket")
+			c.debug("reading from websocket")
 			resp := &WebsocketTicker{}
 			err := conn.ReadJSON(resp)
 			if err != nil {
-				// log.Println("got error from read", err)
-				errChan <- err
+				errChan <- errors.Wrap(err, "reading JSON")
 			} else {
-				// log.Printf("got ticker data from read: %#v", resp.Data)
+				c.debugf("got ticker data from read: %#v", resp.Data)
 				dataChan <- resp.Data
 			}
 		}
 	}
 }
 
-func monitorExchangeStream(conn *websocket.Conn, dataChan chan *Exchange, errChan chan error, stopChan chan bool) {
-	// log.Println("monitoring websocket")
+func (c *Client) monitorExchangeStream(conn *websocket.Conn, dataChan chan *Exchange, errChan chan error, stopChan chan bool) {
+	c.debug("monitoring websocket")
 	defer conn.Close()
 	for {
 		select {
@@ -139,18 +142,40 @@ func monitorExchangeStream(conn *websocket.Conn, dataChan chan *Exchange, errCha
 			close(errChan)
 			return
 		default:
-			// log.Println("reading from websocket")
+			c.debug("reading from websocket")
 			resp := &WebsocketExchange{}
 			err := conn.ReadJSON(resp)
 			if err != nil {
-				// log.Println("got error from read", err)
-				errChan <- err
+				errChan <- errors.Wrap(err, "reading JSON")
 			} else {
-				// log.Printf("got ticker data from read: %#v", resp.Data)
+				c.debugf("got ticker data from read: %#v", resp.Data)
 				dataChan <- resp.Data
 			}
 		}
 	}
+}
+
+// Exchanges returns the global ecxhange data for the supplied cryptos and fiats
+func (c *Client) Exchanges(cryptos, fiats []string) ([]*Exchange, error) {
+	params := url.Values{}
+
+	if cryptos != nil && len(cryptos) > 0 {
+		params.Set("crypto", strings.Join(cryptos, ","))
+	}
+	if fiats != nil && len(fiats) > 0 {
+		params.Set("fiat", strings.Join(fiats, ","))
+	}
+
+	res, err := c.doReq("/exchanges/ticker/all", params)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(res.Body)
+	data := []*Exchange{}
+	if err := dec.Decode(&data); err != nil {
+		return nil, errors.Wrap(err, "decoding JSON")
+	}
+	return data, nil
 }
 
 // ExchangeStream will stream one or more exchanges
@@ -165,7 +190,7 @@ func (c *Client) ExchangeStream(exchanges ...string) (chan *Exchange, chan error
 	}
 
 	for _, e := range exchanges {
-		// log.Printf("got socket connection %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+		c.debugf("got socket connection %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
 		err = conn.WriteJSON(&WebsocketCommand{
 			Event: "message",
 			Data: &WebsocketOperation{
@@ -178,20 +203,20 @@ func (c *Client) ExchangeStream(exchanges ...string) (chan *Exchange, chan error
 	}
 
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "writing subscribe messages")
 	}
 
 	resp := &WebsocketCommandResponse{}
 	err = conn.ReadJSON(resp)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "reading JSON from websocket")
 	}
 
 	if resp.Data != "OK" {
 		return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
 	}
 
-	go monitorExchangeStream(conn, dataChan, errChan, stopChan)
+	go c.monitorExchangeStream(conn, dataChan, errChan, stopChan)
 
 	return dataChan, errChan, stopChan, nil
 }
@@ -202,16 +227,16 @@ func (c *Client) getSocketConnection(urlStr string) (*websocket.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	// log.Println("got socket ticket")
+	c.debug("got socket ticket")
 
 	params := url.Values{}
 	params.Add("ticket", ticket.Ticket)
 	params.Add("public_key", c.publicKey)
 	socketURL := makeReqURL("wss", urlStr, params)
-	// log.Println("connecting to socket", socketURL)
+	c.debug("connecting to socket", socketURL)
 	conn, _, err := websocket.DefaultDialer.Dial(socketURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "dialing socket to %s", socketURL)
 	}
 	return conn, nil
 
@@ -235,7 +260,7 @@ func (c *Client) Tickers(cryptos, fiats []string) (MultiTicker, error) {
 	dec := json.NewDecoder(res.Body)
 	data := MultiTicker{}
 	if err := dec.Decode(&data); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "decoding JSON")
 	}
 	return data, nil
 }
@@ -251,7 +276,7 @@ func (c *Client) TickerStream(ticker string) (chan *Ticker, chan error, chan boo
 		return nil, nil, nil, err
 	}
 
-	// log.Printf("got socket connection %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
+	c.debugf("got socket connection %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
 	err = conn.WriteJSON(&WebsocketCommand{
 		Event: "message",
 		Data: &WebsocketOperation{
@@ -264,20 +289,20 @@ func (c *Client) TickerStream(ticker string) (chan *Ticker, chan error, chan boo
 	})
 
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "writing subscribe message to socket")
 	}
 
 	resp := &WebsocketCommandResponse{}
 	err = conn.ReadJSON(resp)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "reading JSON from websocket")
 	}
 
 	if resp.Data != "OK" {
 		return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
 	}
 
-	go monitorTickerStream(conn, dataChan, errChan, stopChan)
+	go c.monitorTickerStream(conn, dataChan, errChan, stopChan)
 
 	return dataChan, errChan, stopChan, nil
 }

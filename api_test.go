@@ -17,7 +17,7 @@ func getTestingClient(t *testing.T) *Client {
 	if secret == "" {
 		t.Fatalf("Missing %s from env", btcAverageSecretKey)
 	}
-	return NewClient(pubkey, secret)
+	return NewClient(pubkey, secret, nil)
 
 }
 
