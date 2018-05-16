@@ -1,4 +1,4 @@
-module github.com/dangersalad/gobitcoinaverage
+module github.com/dangersalad/go-bitcoinaverage
 
 require (
 	github.com/gorilla/websocket v1.2.0
