@@ -200,20 +200,19 @@ func (c *Client) ExchangeStream(exchanges ...string) (chan *Exchange, chan error
 				},
 			},
 		})
-	}
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "writing subscribe messages")
+		}
+		resp := &WebsocketCommandResponse{}
+		err = conn.ReadJSON(resp)
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "reading JSON from websocket")
+		}
 
-	if err != nil {
-		return nil, nil, nil, errors.Wrap(err, "writing subscribe messages")
-	}
+		if resp.Data != "OK" {
+			return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
+		}
 
-	resp := &WebsocketCommandResponse{}
-	err = conn.ReadJSON(resp)
-	if err != nil {
-		return nil, nil, nil, errors.Wrap(err, "reading JSON from websocket")
-	}
-
-	if resp.Data != "OK" {
-		return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
 	}
 
 	go c.monitorExchangeStream(conn, dataChan, errChan, stopChan)
@@ -266,7 +265,7 @@ func (c *Client) Tickers(cryptos, fiats []string) (MultiTicker, error) {
 }
 
 // TickerStream will send *Ticker data on the supplied dataChan
-func (c *Client) TickerStream(ticker string) (chan *Ticker, chan error, chan bool, error) {
+func (c *Client) TickerStream(tickers []string) (chan *Ticker, chan error, chan bool, error) {
 	dataChan := make(chan *Ticker, 2)
 	errChan := make(chan error)
 	stopChan := make(chan bool)
@@ -277,29 +276,31 @@ func (c *Client) TickerStream(ticker string) (chan *Ticker, chan error, chan boo
 	}
 
 	c.debugf("got socket connection %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
-	err = conn.WriteJSON(&WebsocketCommand{
-		Event: "message",
-		Data: &WebsocketOperation{
-			Operation: "subscribe",
-			Options: &WebsocketOperationOptions{
-				Currency:  ticker,
-				SymbolSet: "global",
+	for _, ticker := range tickers {
+		err = conn.WriteJSON(&WebsocketCommand{
+			Event: "message",
+			Data: &WebsocketOperation{
+				Operation: "subscribe",
+				Options: &WebsocketOperationOptions{
+					Currency:  ticker,
+					SymbolSet: "global",
+				},
 			},
-		},
-	})
+		})
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "writing subscribe message to socket")
+		}
 
-	if err != nil {
-		return nil, nil, nil, errors.Wrap(err, "writing subscribe message to socket")
-	}
+		resp := &WebsocketCommandResponse{}
+		err = conn.ReadJSON(resp)
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "reading JSON from websocket")
+		}
 
-	resp := &WebsocketCommandResponse{}
-	err = conn.ReadJSON(resp)
-	if err != nil {
-		return nil, nil, nil, errors.Wrap(err, "reading JSON from websocket")
-	}
+		if resp.Data != "OK" {
+			return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
+		}
 
-	if resp.Data != "OK" {
-		return nil, nil, nil, fmt.Errorf("Non OK command response: %s", resp.Data)
 	}
 
 	go c.monitorTickerStream(conn, dataChan, errChan, stopChan)
