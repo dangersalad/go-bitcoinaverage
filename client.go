@@ -265,7 +265,7 @@ func (c *Client) Tickers(cryptos, fiats []string) (MultiTicker, error) {
 }
 
 // TickerStream will send *Ticker data on the supplied dataChan
-func (c *Client) TickerStream(tickers []string) (chan *Ticker, chan error, chan bool, error) {
+func (c *Client) TickerStream(tickers ...string) (chan *Ticker, chan error, chan bool, error) {
 	dataChan := make(chan *Ticker, 2)
 	errChan := make(chan error)
 	stopChan := make(chan bool)
