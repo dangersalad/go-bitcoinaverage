@@ -1,3 +1,4 @@
+// Package bitcoinaverage implements a client for the bitcoinaverage API version 2
 package bitcoinaverage
 
 import (
@@ -7,14 +8,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
-	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 )
 
 var _ = bytes.MinRead
