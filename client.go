@@ -3,17 +3,12 @@ package bitcoinaverage
 
 import (
 	"bytes"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
@@ -27,36 +22,18 @@ const (
 
 // Client is a client to connect to the bitcoinaverage API
 type Client struct {
-	publicKey, privateKey string
-	http                  http.Client
-	logger                logger
+	publicKey string
+	http      http.Client
+	logger    logger
 }
 
 // NewClient returns a new Client instance with the keys set
-func NewClient(publicKey, privateKey string, l logger) *Client {
+func NewClient(publicKey string, l logger) *Client {
 	return &Client{
-		publicKey:  publicKey,
-		privateKey: privateKey,
-		http:       http.Client{},
-		logger:     l,
+		publicKey: publicKey,
+		http:      http.Client{},
+		logger:    l,
 	}
-}
-
-func (c *Client) getSignature() string {
-	// get timestamp
-	t := time.Now()
-	ts := int(t.Unix())
-	timestamp := strconv.Itoa(ts)
-
-	payload := timestamp + "." + c.publicKey
-
-	// prepare the hmac with sha256
-	hash := hmac.New(sha256.New, []byte(c.privateKey))
-	hash.Write([]byte(payload))
-	// hex representation
-	hexValue := hex.EncodeToString(hash.Sum(nil))
-
-	return payload + "." + hexValue
 }
 
 func makeReqURL(scheme, path string, params url.Values) string {
@@ -76,7 +53,7 @@ func (c *Client) doReq(path string, params url.Values) (*http.Response, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "making request for %s", path)
 	}
-	r.Header.Set("X-signature", c.getSignature())
+	r.Header.Set("x-ba-key", c.publicKey)
 	res, err := c.http.Do(r)
 	if err != nil {
 		return nil, errors.Wrapf(err, "doing request for %s", path)
@@ -161,10 +138,10 @@ func (c *Client) monitorExchangeStream(conn *websocket.Conn, dataChan chan *Exch
 func (c *Client) Exchanges(cryptos, fiats []string) ([]*Exchange, error) {
 	params := url.Values{}
 
-	if cryptos != nil && len(cryptos) > 0 {
+	if len(cryptos) > 0 {
 		params.Set("crypto", strings.Join(cryptos, ","))
 	}
-	if fiats != nil && len(fiats) > 0 {
+	if len(fiats) > 0 {
 		params.Set("fiat", strings.Join(fiats, ","))
 	}
 
